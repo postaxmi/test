@@ -3,7 +3,8 @@ library(readr)
 library(tm)
 library(tidyverse)
 library(tidytext)
-data<-read_csv("../../statistics/Texas Last Statement - CSV.csv",enc)
+set.seed(123)
+data<-read_csv("Texas Last Statement - CSV.csv")
 
 # column TDCJNumber can be used as indentifier for each observation
 # column LastStatement has the text of the last statement
@@ -17,12 +18,15 @@ docs <- data.frame(doc_id = data$TDCJNumber,
                    stringsAsFactors = FALSE)
 ds <- DataframeSource(docs)
 x <- Corpus(ds)
+x <- tm_map(x, content_transformer(tolower))
+x <- tm_map(x, removePunctuation)
+x <- tm_map(x, removeWords, stopwords("english"))
 dtm <- DocumentTermMatrix(x)
-
 
 # get document term matrix (another way)
 tokens<-unnest_tokens(data,word, LastStatement,token="ngrams",n=1)
-words<-tokens %>% group_by(TDCJNumber,word) %>% summarise(count=n())
+words<-tokens %>% anti_join(stop_words) %>% group_by(TDCJNumber,word) %>% summarise(count=n())
+
 dtm2<-words %>%   cast_dtm(TDCJNumber, word, count)
 
 
@@ -48,7 +52,8 @@ ap_top_terms %>%
   ggplot(aes(term, beta, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
-  coord_flip()
+  coord_flip()+
+  labs(title="parole dei topic")
 
 
 beta_spread <- ap_topics %>%
@@ -56,3 +61,25 @@ beta_spread <- ap_topics %>%
   spread(topic, beta) %>%
   filter(topic1 > .001 | topic2 > .001) %>%
   mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread %>% top_n(20,abs(log_ratio)) %>% mutate(term = reorder(term, log_ratio)) %>%
+  ggplot(aes(term,log_ratio)) + 
+  geom_col()+
+  coord_flip()+
+  labs(title="parole più diverse tra i due topic")
+
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+ap_documents
+
+ap_documents %>% ggplot(aes(x=factor(topic),y=gamma))+
+  geom_boxplot()+
+  labs(title="probabilità delle parole dei vari topic")
+
+document_classification <- ap_documents %>%
+  group_by(document) %>%
+  top_n(1, gamma) %>%
+  ungroup()
+
+document_classification %>% ggplot(aes(topic))+
+  geom_bar()+
+  labs(title="numero di documenti per ogni topic")
