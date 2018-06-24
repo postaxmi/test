@@ -6,6 +6,8 @@ library(tidytext)
 library(slam)
 
 set.seed(123)
+
+# read document of last statement
 data<-read_csv("Texas Last Statement - CSV.csv")
 good_indexes <- data$LastStatement != "None"
 
@@ -15,17 +17,33 @@ good_indexes <- data$LastStatement != "None"
 # there are some problems with some characters, let's convert to ascii
 data$LastStatement <- iconv(data$LastStatement, from = "UTF-8", to = "ASCII//TRANSLIT")
 
-# get document term matrix
-docs <- data.frame(doc_id = data$TDCJNumber[good_indexes],
+
+docs_statement <- data.frame(doc_id = data$TDCJNumber[good_indexes],
                    text = data$LastStatement[good_indexes],
                    stringsAsFactors = FALSE)
+
+
+## read documents of elections
+folders<-c("debates","primaries","speeches")
+docs_election<-data.frame(doc_id=character(),text=character())
+for(folder in folders){
+  file_list <- list.files(folder)
+  for (file in file_list){
+    fileName<-paste(folder,file,sep="/")
+    text<-read_file(fileName)
+    docs_election<-rbind(docs_election,data.frame(doc_id=fileName,text=text,stringsAsFactors = F))
+  }
+}
+
+# choose between docs_statement and docs_election
+docs<-docs_statement
 
 ### 
  # function to get document term matrix
  # documents: dataframe with columns doc_id and text
  # tfidf_threshold: (optional, default 0) minimum tf-idf value for each word to be kept in the dtm vocabulary
 getDtm<-function(documents, tfidf_threshold=0){
-  ds  <- DataframeSource(docs)
+  ds  <- DataframeSource(documents)
   x   <- Corpus(ds)
   # remove stpwords, use stemming, remove punctuation and numbers, to lower
   #x   <- tm_map(x, content_transformer(tolower))
