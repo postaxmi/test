@@ -156,10 +156,4 @@ ggplot(df,aes(x=factor(topics),y=value))+
   geom_point()+
   facet_wrap(~measure,scales = "free")
 
-
-for(i in 1:nrow(m)){
-  ap_lda <- LDA(dtm.new, k = m[i,1], control = list(seed = 1234))
-
-  m[i,2]<-perplexity(ap_lda,dtm.new)
-  m[i,3]<-evaluate_doc_topics_distribution(ap_lda,dtm.new)
-}
+write.csv(df,"topics_entropy-perplexity")
