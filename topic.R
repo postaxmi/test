@@ -169,9 +169,15 @@ m[,4]<-m[,4]/log(m[,2])
 df<-data.frame(m)
 colnames(df)<-c("fold","topics","perplexity","entropy")
 df<-df %>% gather(measure,value,perplexity,entropy)
-ggplot(df,aes(x=factor(topics),y=value))+
-  geom_boxplot()+
+ggplot(df,aes(x=factor(topics),y=value,color=factor(fold)))+
   geom_point()+
+  geom_line(aes(group=fold))+
+  geom_point(data=df %>% group_by(topics,measure) %>% mutate(value=mean(value)),aes(x=factor(topics),y=value),color="red")+
+  facet_wrap(~measure,scales = "free")
+
+ggplot(df %>% group_by(topics,measure) %>% mutate(value=mean(value)),aes(x=factor(topics),y=value))+
+  geom_point()+
+  geom_line()+
   facet_wrap(~measure,scales = "free")
 
 write.csv(df,"topics_entropy-perplexity")
