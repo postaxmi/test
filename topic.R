@@ -43,6 +43,21 @@ getDtm<-function(documents, tfidf_threshold=0){
   return(dtm_reduced)
 }
 
+###
+ # function to get mean value of entropy for document_topics distribution
+ # ap_lda: lda topic model
+ # dtm: document term matrix
+evaluate_doc_topics_distribution<-function(ap_lda, dtm){
+  # get for each document the topic distribution
+  doc_topics_distribution<-posterior(ap_lda,dtm)$topics
+  # compute for each document the entropy of the topic distribution:
+  #  documents with only 1 topic with very high probability will have small value of entropy
+  #  documents with many topics with same probability (almost uniform distribution) will have high value of entropy
+  doc_topics_distribution$entropy<- -rowSums(doc_topics_distribution*log2(doc_topics_distribution))
+  doc_topics_entropy<-mean(doc_topics_distribution$entropy)
+  return(doc_topics_entropy)
+}
+
 # get document term matrix (another way)
 tokens <- unnest_tokens(data,word, LastStatement,token="ngrams",n=1)
 words  <- tokens %>% anti_join(stop_words,by="word") %>% group_by(TDCJNumber,word) %>% summarise(count=n())
@@ -53,6 +68,9 @@ dtm.new<- getDtm(docs,tfidf_threshold = 0.1)
 
 
 ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234))
+
+evaluate_doc_topics_distribution(ap_lda,dtm.new)
+perplexity(ap_lda,dtm.new)
 
 ap_topics <- tidy(ap_lda, matrix = "beta")
 ap_topics
@@ -92,6 +110,7 @@ ap_documents %>% ggplot(aes(x=factor(topic),y=gamma))+
   geom_boxplot()+
   labs(title="probabilit? delle parole dei vari topic")
 
+
 document_classification <- ap_documents %>%
   group_by(document) %>%
   top_n(1, gamma) %>%
@@ -100,3 +119,47 @@ document_classification <- ap_documents %>%
 document_classification %>% ggplot(aes(topic))+
   geom_bar()+
   labs(title="numero di documenti per ogni topic")
+
+
+## evaluate different models given by varying the number of topics
+
+n_topics<-2:20
+folds<-seq_len(10)
+folding <- sample(rep(folds, nrow(dtm.new))[seq_len(nrow(dtm.new))])
+m<-matrix(nrow=length(n_topics)*length(folds),ncol=4)
+i<-1
+for (k in n_topics) {
+  print(paste("topics: ",k))
+  for (fold in folds) {
+    m[i,1]<-fold
+    m[i,2]<-k
+    
+    train_dtm<-dtm.new[folding!=fold,]
+    test_dtm<-dtm.new[folding==fold,]
+    ap_lda <- LDA(train_dtm, k = k, control = list(seed = 1234))
+    
+    m[i,3]<-perplexity(ap_lda,test_dtm)
+    m[i,4]<-evaluate_doc_topics_distribution(ap_lda,test_dtm)
+    
+    i<-i+1
+  }
+}
+
+# better rescale entropy based on number of topics
+m[,4]<-m[,4]/log(m[,2])
+
+df<-data.frame(m)
+colnames(df)<-c("fold","topics","perplexity","entropy")
+df<-df %>% gather(measure,value,perplexity,entropy)
+ggplot(df,aes(x=factor(topics),y=value))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~measure,scales = "free")
+
+
+for(i in 1:nrow(m)){
+  ap_lda <- LDA(dtm.new, k = m[i,1], control = list(seed = 1234))
+
+  m[i,2]<-perplexity(ap_lda,dtm.new)
+  m[i,3]<-evaluate_doc_topics_distribution(ap_lda,dtm.new)
+}
