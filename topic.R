@@ -42,18 +42,20 @@ docs<-docs_statement
  # function to get document term matrix
  # documents: dataframe with columns doc_id and text
  # tfidf_threshold: (optional, default 0) minimum tf-idf value for each word to be kept in the dtm vocabulary
-getDtm<-function(documents, tfidf_threshold=0){
-  ds  <- DataframeSource(documents)
-  x   <- Corpus(ds)
-  # remove stpwords, use stemming, remove punctuation and numbers, to lower
-  #x   <- tm_map(x, content_transformer(tolower))
-  #x   <- tm_map(x, removePunctuation)
-  #x   <- tm_map(x, removeWords, stopwords("english"))
-  dtm <- DocumentTermMatrix(x, control = list(stemming = TRUE, stopwords = TRUE, minWordLength = 3, removeNumbers = TRUE, removePunctuation = TRUE))
+getDtm <- function(documents, tfidf_threshold=0){
+  ds  <- DataframeSource(data.frame(doc_id = documents$doc_id,
+                                    text = documents$text,
+                                    stringsAsFactors = FALSE))
+  x   <- SimpleCorpus(ds)
+  # to lower, remove stopwords, remove numbers and punctuation, use stemming
+  x   <- tm_map(x, content_transformer(tolower))
+  # x   <- tm_map(x, removePunctuation)
+  x   <- tm_map(x, removeWords, stopwords("SMART"))
+  dtm <- DocumentTermMatrix(x, control = list(minWordLength = 3, removeNumbers = TRUE, removePunctuation = TRUE, stemming = TRUE))
 
   # reduce vocabulary of the dtm, consider only words with high values of tf-idf
   term_tfidf<-tapply(dtm$v/row_sums(dtm)[dtm$i], dtm$j, mean) *log2(nDocs(dtm)/col_sums(dtm > 0))
-  print(paste("median tf-idf: ",median(term_tfidf)))
+  print(paste("median tf-idf:",median(term_tfidf)))
 
   dtm_reduced <- dtm[, term_tfidf >= tfidf_threshold]
   rowTotals <- apply(dtm_reduced , 1, sum) #Find the sum of words in each Document
@@ -83,7 +85,7 @@ words  <- tokens %>% anti_join(stop_words,by="word") %>% group_by(TDCJNumber,wor
 dtm2   <- words  %>% cast_dtm(TDCJNumber, word, count)
 
 dtm.new<- getDtm(docs,tfidf_threshold = 0.1)
-
+#
 
 ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234))
 
@@ -119,14 +121,14 @@ beta_spread %>% top_n(20,abs(log_ratio)) %>% mutate(term = reorder(term, log_rat
   ggplot(aes(term,log_ratio)) + 
   geom_col()+
   coord_flip()+
-  labs(title="parole pi? diverse tra i due topic")
+  labs(title="parole più diverse tra i due topic")
 
 ap_documents <- tidy(ap_lda, matrix = "gamma")
 ap_documents
 
 ap_documents %>% ggplot(aes(x=factor(topic),y=gamma))+
   geom_boxplot()+
-  labs(title="probabilit? delle parole dei vari topic")
+  labs(title="probabilità delle parole dei vari topic")
 
 
 document_classification <- ap_documents %>%
@@ -147,7 +149,7 @@ folding <- sample(rep(folds, nrow(dtm.new))[seq_len(nrow(dtm.new))])
 m<-matrix(nrow=length(n_topics)*length(folds),ncol=4)
 i<-1
 for (k in n_topics) {
-  print(paste("topics: ",k))
+  print(paste("topics:",k))
   for (fold in folds) {
     m[i,1]<-fold
     m[i,2]<-k
