@@ -183,3 +183,55 @@ ggplot(df %>% group_by(topics,measure) %>% mutate(value=mean(value)),aes(x=facto
   facet_wrap(~measure,scales = "free")
 
 write.csv(df,"topics_entropy-perplexity")
+
+# evaluate perplexity in a parallel way
+## with lda you can specify method VEM or Gibbs (Gibbs seems faster but it gives different results)
+
+library(doParallel)
+DTM<-dtm.new
+cluster <- makeCluster(detectCores(logical = TRUE) - 1) # leave one CPU spare...
+registerDoParallel(cluster)
+
+clusterEvalQ(cluster, {
+  library(topicmodels)
+})
+
+folds <- 5
+splitfolds <- sample(1:folds, 23, replace = TRUE)
+candidate_k <- c(2:20) # candidates for how many topics
+burnin = 100
+iter = 1000
+keep = 50
+
+clusterExport(cluster, c("burnin", "iter", "keep", "splitfolds", "folds", "candidate_k"))
+
+# we parallelize by the different number of topics.  A processor is allocated a value
+# of k, and does the cross-validation serially.  This is because it is assumed there
+# are more candidate values of k than there are cross-validation folds, hence it
+# will be more efficient to parallelise
+system.time({
+  results <- foreach(j = 1:length(candidate_k), .combine = rbind) %dopar%{
+    k <- candidate_k[j]
+    results_1k <- matrix(0, nrow = folds, ncol = 2)
+    colnames(results_1k) <- c("k", "perplexity")
+    for(i in 1:folds){
+      train_set <- DTM[splitfolds != i , ]
+      valid_set <- DTM[splitfolds == i, ]
+      
+      fitted <- LDA(train_set, k = k, method = "Gibbs", control = list(burnin = burnin, iter = iter, keep = keep) )
+      #fitted <- LDA(train_set, k = k)
+      results_1k[i,] <- c(k, perplexity(fitted, newdata = valid_set))
+    }
+    return(results_1k)
+  }
+})
+
+stopCluster(cluster)
+
+results_df <- as.data.frame(results)
+
+ggplot(results_df, aes(x = k, y = perplexity)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  ggtitle("5-fold cross-validation of topic modeling") +
+  labs(x = "Candidate number of topics", y = "Perplexity on the hold-out set")
