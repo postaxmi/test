@@ -18,25 +18,27 @@ good_indexes <- data$LastStatement != "None"
 data$LastStatement <- iconv(data$LastStatement, from = "UTF-8", to = "ASCII//TRANSLIT")
 
 
-docs_statement <- data.frame(doc_id = data$TDCJNumber[good_indexes],
-                   text = data$LastStatement[good_indexes],
-                   stringsAsFactors = FALSE)
+#docs_statement <- data.frame(doc_id = data$TDCJNumber[good_indexes],
+#                   text = data$LastStatement[good_indexes],
+#                   stringsAsFactors = FALSE)
 
+docs_statement <- data %>% filter(LastStatement != "None")
 
 ## read documents of elections
 folders<-c("debates","primaries","speeches")
-docs_election<-data.frame(doc_id=character(),text=character())
+docs_election<-data.frame(doc_id=character(),text=character(),folder=character(),who=character())
 for(folder in folders){
   file_list <- list.files(folder)
   for (file in file_list){
     fileName<-paste(folder,file,sep="/")
     text<-read_file(fileName)
-    docs_election<-rbind(docs_election,data.frame(doc_id=fileName,text=text,stringsAsFactors = F))
+    docs_election<-rbind(docs_election,data.frame(doc_id=fileName,text=text,folder=folder,who=tolower(substr(file,0,5)),stringsAsFactors = F))
   }
 }
+docs_election<-docs_election %>% mutate(folder=factor(folder),who=factor(who))
 
 # choose between docs_statement and docs_election
-docs<-docs_statement
+docs<-docs_election
 
 ### 
  # function to get document term matrix
@@ -84,11 +86,11 @@ words  <- tokens %>% anti_join(stop_words,by="word") %>% group_by(TDCJNumber,wor
 # Possible elaborations here...
 dtm2   <- words  %>% cast_dtm(TDCJNumber, word, count)
 
-dtm.new<- getDtm(docs,tfidf_threshold = 0.1)
+dtm.new<- getDtm(docs,tfidf_threshold = 0)
 #
 
 ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
-plot(ap_lda@logLiks[2:100])
+plot(ap_lda@logLiks)
 ap_lda <- LDA(dtm.new, k = 5, method = "Gibbs", control = list(burnin = 200, iter = 1000, keep = 1) )
 # check convergence of chain looking at loglikelihood vs iterations
 plot(ap_lda@logLiks)
@@ -131,7 +133,7 @@ beta_spread %>% top_n(20,abs(log_ratio)) %>% mutate(term = reorder(term, log_rat
 ap_documents <- tidy(ap_lda, matrix = "gamma")
 ap_documents
 
-dd<-data %>% inner_join(ap_documents %>% mutate(document=as.integer(document)),by=c("TDCJNumber"="document")) %>% mutate(Age=floor(Age/10)*10)
+dd<-docs %>% inner_join(ap_documents,by=c("doc_id"="document"))
 
 # distribution of topics
 dd %>% group_by(topic) %>% summarise(gamma=sum(gamma)) %>% 
@@ -149,17 +151,35 @@ topic_by_groups<-function(data,total){
     ggplot(aes(x=groupByValue,y=gamma,color=factor(topic)))+geom_point()+geom_smooth(se=F)
 }
 
+###############################
+# for last statement docs
+
 # group data by age and plot distribution
-dataByAge<-data %>% mutate(groupByValue=Age)
-t<-data_by_groups(dataByAge)
+dataByGroup<-dd %>% mutate(groupByValue=floor(Age/10)*10)
+t<-data_by_groups(dataByGroup)
 t$plot
-topic_by_groups(dataByAge,t$data)
+topic_by_groups(dataByGroup,t$data)
 
 # group data by MaleVictim and plot distribution
-dataByAge<-data %>% mutate(groupByValue=MaleVictim)
-t<-data_by_groups(dataByAge)
+dataByGroup<-dd %>% mutate(groupByValue=MaleVictim)
+t<-data_by_groups(dataByGroup)
 t$plot
-topic_by_groups(dataByAge,t$data)
+topic_by_groups(dataByGroup,t$data)
+
+###############################
+# for election docs
+
+# group data by folder and plot distribution
+dataByGroup<-dd %>% mutate(groupByValue=folder)
+t<-data_by_groups(dataByGroup)
+t$plot
+topic_by_groups(dataByGroup,t$data)
+
+# group data by who and plot distribution
+dataByGroup<-dd %>% mutate(groupByValue=who)
+t<-data_by_groups(dataByGroup)
+t$plot
+topic_by_groups(dataByGroup,t$data)
 
 
 
