@@ -1,0 +1,6 @@
+table{
+font-size:15px;
+}
+.dataTables_scrollBody{
+max-height:410px;
+}
