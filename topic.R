@@ -131,6 +131,38 @@ beta_spread %>% top_n(20,abs(log_ratio)) %>% mutate(term = reorder(term, log_rat
 ap_documents <- tidy(ap_lda, matrix = "gamma")
 ap_documents
 
+dd<-data %>% inner_join(ap_documents %>% mutate(document=as.integer(document)),by=c("TDCJNumber"="document")) %>% mutate(Age=floor(Age/10)*10)
+
+# distribution of topics
+dd %>% group_by(topic) %>% summarise(gamma=sum(gamma)) %>% 
+  ggplot(aes(x=factor(topic),y=gamma))+geom_col()
+
+# plot distribution of documents w.r.t a feature (column groupByValue)
+data_by_groups<-function(data){
+  a<-data%>% group_by(groupByValue) %>% summarise(count=n()) 
+  p<-ggplot(a,aes(x=groupByValue,y=count))+geom_col()
+  return(list(plot=p,data=a))
+}
+# plot distribution of topics w.r.t documents feature (column groupByValue)
+topic_by_groups<-function(data,total){
+  data %>% group_by(groupByValue,topic) %>% summarise(gamma=sum(gamma)) %>% inner_join(total,by="groupByValue") %>% mutate(gamma=gamma/count) %>% 
+    ggplot(aes(x=groupByValue,y=gamma,color=factor(topic)))+geom_point()+geom_smooth(se=F)
+}
+
+# group data by age and plot distribution
+dataByAge<-data %>% mutate(groupByValue=Age)
+t<-data_by_groups(dataByAge)
+t$plot
+topic_by_groups(dataByAge,t$data)
+
+# group data by MaleVictim and plot distribution
+dataByAge<-data %>% mutate(groupByValue=MaleVictim)
+t<-data_by_groups(dataByAge)
+t$plot
+topic_by_groups(dataByAge,t$data)
+
+
+
 ap_documents %>% ggplot(aes(x=factor(topic),y=gamma))+
   geom_boxplot()+
   labs(title="probabilità delle parole dei vari topic")
