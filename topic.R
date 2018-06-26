@@ -22,7 +22,7 @@ data$LastStatement <- iconv(data$LastStatement, from = "UTF-8", to = "ASCII//TRA
 #                   text = data$LastStatement[good_indexes],
 #                   stringsAsFactors = FALSE)
 
-docs_statement <- data %>% filter(LastStatement != "None")
+docs_statement <- data %>% filter(LastStatement != "None") %>% mutate(doc_id=TDCJNumber,text=LastStatement)
 
 ## read documents of elections
 folders<-c("debates","primaries","speeches")
