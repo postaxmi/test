@@ -200,14 +200,15 @@ document_classification %>% ggplot(aes(topic))+
 
 ## evaluate different models given by varying the number of topics
 
-n_topics<-2:20
-folds<-seq_len(10)
+n_topics<-2:30
+folds<-seq_len(5)
 folding <- sample(rep(folds, nrow(dtm.new))[seq_len(nrow(dtm.new))])
-m<-matrix(nrow=length(n_topics)*length(folds),ncol=4)
+m<-matrix(nrow=length(n_topics)*length(folds),ncol=6)
 i<-1
 for (k in n_topics) {
   print(paste("topics:",k))
   for (fold in folds) {
+    print(fold)
     m[i,1]<-fold
     m[i,2]<-k
     
@@ -215,19 +216,29 @@ for (k in n_topics) {
     test_dtm<-dtm.new[folding==fold,]
     ap_lda <- LDA(train_dtm, k = k, control = list(seed = 1234))
     
-    m[i,3]<-perplexity(ap_lda,test_dtm)
-    m[i,4]<-evaluate_doc_topics_distribution(ap_lda,test_dtm)
+    m[i,3]<-perplexity(ap_lda,train_dtm)
+    m[i,4]<-evaluate_doc_topics_distribution(ap_lda,train_dtm)
+    
+    m[i,5]<-perplexity(ap_lda,test_dtm)
+    m[i,6]<-evaluate_doc_topics_distribution(ap_lda,test_dtm)
     
     i<-i+1
   }
+  df<-data.frame(m)
+  write.csv(df,paste0("matrix_cross_validation",k,".csv"))
 }
+
+df<-data.frame(m)
+write.csv(df,"matrix_cross_validation.csv")
 
 # better rescale entropy based on number of topics
 m[,4]<-m[,4]/log(m[,2])
 
-df<-data.frame(m)
-colnames(df)<-c("fold","topics","perplexity","entropy")
-df<-df %>% gather(measure,value,perplexity,entropy)
+df<-read.csv("matrix_cross_validation.csv")
+colnames(df)<-c("fold","topics","perplexity_train","entropy_train","perplexity_test","entropy_test")
+df<-df %>% mutate(entropy_train=entropy_train/log(topics),entropy_test=entropy_test/log(topics))
+
+df<-df %>% gather(measure,value,perplexity_train,entropy_train,perplexity_test, entropy_test)
 ggplot(df,aes(x=factor(topics),y=value,color=factor(fold)))+
   geom_point()+
   geom_line(aes(group=fold))+
