@@ -87,7 +87,12 @@ dtm2   <- words  %>% cast_dtm(TDCJNumber, word, count)
 dtm.new<- getDtm(docs,tfidf_threshold = 0.1)
 #
 
-ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234))
+ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
+plot(ap_lda@logLiks[2:100])
+ap_lda <- LDA(dtm.new, k = 5, method = "Gibbs", control = list(burnin = 200, iter = 1000, keep = 1) )
+# check convergence of chain looking at loglikelihood vs iterations
+plot(ap_lda@logLiks)
+
 
 evaluate_doc_topics_distribution(ap_lda,dtm.new)
 perplexity(ap_lda,dtm.new)
@@ -235,3 +240,22 @@ ggplot(results_df, aes(x = k, y = perplexity)) +
   geom_smooth(se = FALSE) +
   ggtitle("5-fold cross-validation of topic modeling") +
   labs(x = "Candidate number of topics", y = "Perplexity on the hold-out set")
+
+
+
+# better visualization
+
+library(LDAvis)
+
+p<-posterior(ap_lda)
+
+docl <- apply(dtm.new , 1, sum) #Find the sum of words in each Document
+wordf <- apply(dtm.new, 2 ,sum)
+data<-list(phi=p$terms,theta=p$topics,vocab=colnames(p$terms),doc.length=docl,term.frequency=wordf)
+
+json <- createJSON(phi = data$phi, 
+                   theta = data$theta, 
+                   doc.length = data$doc.length, 
+                   vocab = data$vocab, 
+                   term.frequency = data$term.frequency)
+serVis(json, out.dir = 'vis', open.browser = T)
