@@ -235,7 +235,7 @@ write.csv(df,"matrix_cross_validation.csv")
 m[,4]<-m[,4]/log(m[,2])
 
 df<-read.csv("matrix_cross_validation.csv")
-colnames(df)<-c("fold","topics","perplexity_train","entropy_train","perplexity_test","entropy_test")
+colnames(df)<-c("rownumber","fold","topics","perplexity_train","entropy_train","perplexity_test","entropy_test")
 df<-df %>% mutate(entropy_train=entropy_train/log(topics),entropy_test=entropy_test/log(topics))
 
 df<-df %>% gather(measure,value,perplexity_train,entropy_train,perplexity_test, entropy_test)

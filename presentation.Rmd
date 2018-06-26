@@ -199,7 +199,7 @@ ap_top_terms %>%
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
   coord_flip()+
-  labs(title="parole dei topic")
+  labs(title="Top relevant words of each topic")
 
 ```
 
@@ -213,10 +213,10 @@ dd<-docs %>% inner_join(ap_documents,by=c("doc_id"="document"))
 
 # distribution of topics
 dd %>% group_by(topic) %>% summarise(gamma=sum(gamma)) %>% 
-  ggplot(aes(x=factor(topic),y=gamma))+geom_col()
+  ggplot(aes(x=factor(topic),y=gamma))+geom_col()+labs(x="topic")
 ```
 
-## Distribution of topics considering age of the author
+## Distribution of topics considering age of the author (I)
 
 ```{r}
 # plot distribution of documents w.r.t a feature (column groupByValue)
@@ -228,23 +228,198 @@ data_by_groups<-function(data){
 # plot distribution of topics w.r.t documents feature (column groupByValue)
 topic_by_groups<-function(data,total){
   p<-data %>% group_by(groupByValue,topic) %>% summarise(gamma=sum(gamma)) %>% inner_join(total,by="groupByValue") %>% mutate(gamma=gamma/count) %>% 
-    ggplot(aes(x=groupByValue,y=gamma,color=factor(topic)))+geom_point()+geom_smooth(se=F)
+    ggplot(aes(x=groupByValue,y=gamma,color=factor(topic)))+geom_point()+geom_smooth(se=F,method="loess")
   return(p)
 }
 
 # group data by age and plot distribution
 dataByGroup<-dd %>% mutate(groupByValue=floor(Age/10)*10)
 t<-data_by_groups(dataByGroup)
-t$plot
-topic_by_groups(dataByGroup,t$data)
-
+t$plot+labs(x="Age")
 ```
+
+
+## Distribution of topics considering age of the author (II)
+
+```{r}
+p<-topic_by_groups(dataByGroup,t$data)+labs(x="Age",color="topic")
+suppressWarnings(print(p))
+```
+
+## Distribution of topics considering number of victims (I)
 
 ```{r}
 # group data by MaleVictim and plot distribution
-dataByGroup<-dd %>% mutate(groupByValue=MaleVictim)
+dataByGroup<-dd %>% mutate(groupByValue=NumberVictim)
 t<-data_by_groups(dataByGroup)
-par(mfrow=c(2,1))
+p<-t$plot+labs(x="Victims")
+suppressWarnings(print(p))
+```
+
+
+## Distribution of topics considering number of victims (II)
+
+```{r}
+p<-topic_by_groups(dataByGroup,t$data)+labs(x="Victims",color="topic")
+suppressWarnings(print(p))
+```
+## Dataset election 2016
+
+descr
+
+## Election documents
+
+```{r}
+datatable(
+  docs_election %>% select(text) %>% head, extensions = 'FixedColumns',
+  options = list(
+  scrollX = T,
+  scrollCollapse = T,paging=T,searching=T,pageLength=3
+))
+```
+
+## Most used words in election documents 
+
+```{r}
+docs<-docs_election
+dtm.new<- getDtm(docs,tfidf_threshold = 0)
+
+words<-data.frame(word=colnames(dtm.new),count=apply(dtm.new,2,sum),stringsAsFactors = F) %>% filter(count>4)
+#wordcloud2::wordcloud2(words)
+
+```
+![](words_election.PNG)
+
+
+## LDA using VEM
+
+```{r}
+ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
+ap_topics <- tidy(ap_lda, matrix = "beta")
+
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()+
+  labs(title="Top words of each topic")
+```
+
+## Top relevant Words for each topic
+
+
+$$relevance = \lambda*p(word|topic)+(1-\lambda)*\frac{p(word|topic)}{p(word)}$$
+
+```{r}
+# Highlight words that are really relevant for each topic, so discard common words varying
+
+total<-sum(words$count)
+lambda<-0.9 # choose proper value of lambda
+ap_top_terms <- ap_topics %>% inner_join(words,by=c("term"="word"))%>% mutate(freq=count/total,relevance=lambda*beta+(1-lambda)*beta/freq) %>% 
+  group_by(topic) %>%
+  top_n(10, relevance) %>%
+  ungroup() %>%
+  arrange(topic, -relevance)
+
+ap_top_terms %>%
+  mutate(term = reorder(term, relevance)) %>%
+  ggplot(aes(term, relevance, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()+
+  labs(title="Top relevant words of each topic")
+
+```
+
+## Distribution of topics
+
+```{r}
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+
+
+dd<-docs %>% inner_join(ap_documents,by=c("doc_id"="document"))
+
+# distribution of topics
+dd %>% group_by(topic) %>% summarise(gamma=sum(gamma)) %>% 
+  ggplot(aes(x=factor(topic),y=gamma))+geom_col()+labs(x="topic")
+```
+
+## Distribution of topics considering type of text (I)
+
+```{r}
+# group data by folder and plot distribution
+dataByGroup<-dd %>% mutate(groupByValue=folder)
+t<-data_by_groups(dataByGroup)
 t$plot
+```
+
+## Distribution of topics considering type of text (II)
+
+```{r}
 topic_by_groups(dataByGroup,t$data)
+```
+
+
+## Distribution of topics considering the author (I)
+
+```{r}
+# group data by who and plot distribution
+dataByGroup<-dd %>% mutate(groupByValue=who)
+t<-data_by_groups(dataByGroup)
+t$plot
+```
+
+## Distribution of topics considering the author (II)
+
+
+```{r}
+topic_by_groups(dataByGroup,t$data)
+```
+
+## Number of topics
+
+To build the model you need to choose the number of topics.
+
+Cross validation can be used to evaluate models based on different nummber of topics.
+
+Two indexes are considered: perplexity and entropy.
+
+## Number of topics cross validation results
+
+```{r}
+library(tidyr,warn.conflicts = FALSE, quietly=TRUE)
+df<-read.csv("matrix_cross_validation.csv")
+colnames(df)<-c("rownumber","fold","topics","perplexity_train","entropy_train","perplexity_test","entropy_test")
+df<-df %>% mutate(entropy_train=entropy_train/log(topics),entropy_test=entropy_test/log(topics))
+
+df<-df %>% gather(measure,value,perplexity_train,entropy_train,perplexity_test, entropy_test)
+ggplot(df,aes(x=factor(topics),y=value,color=factor(fold)))+
+  geom_point()+
+  geom_line(aes(group=fold))+
+  geom_point(data=df %>% group_by(topics,measure) %>% mutate(value=mean(value)),aes(x=factor(topics),y=value),color="red")+
+  facet_wrap(~measure,scales = "free")
+```
+
+## Compare VEM and Gibbs methods (I)
+
+Estimate of LDA model can be made using VEM algorithm or Gibbs sampling.
+
+TODo add descr
+
+## Compare VEM and Gibbs methods (II)
+
+```{r}
+ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
+#plot(ap_lda@logLiks)
+ap_lda <- LDA(dtm.new, k = 5, method = "Gibbs", control = list(burnin = 200, iter = 1000, keep = 1) )
+# check convergence of chain looking at loglikelihood vs iterations
+plot(ap_lda@logLiks)
 ```
