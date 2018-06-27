@@ -8,6 +8,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+# knitr::opts_chunk$set(cache = TRUE)
 ```
 
 ## Topic models via _topicmodels_
@@ -29,11 +30,39 @@ There are different models, in the _topicmodels_ package there are:
  - Correlated Topic Models
     + Variational Expectation Maximization
 
+## Latent Dirichlet Allocation models (I)
+
+LDA is a Bayesian Mixture Model which can be applied to the analysis of a corpus of documents.
+
+LDA models each topic as a discrete distribution over a finite set of words, and each document as a finite distribution over the set of the $K$ topics.
+
+There is a generative model assumed, for which each document "chooses" a probability distribution over the set of all topics, and each time a word is drawn, first a topic is randomly chosen, then a word is drawn randomly from its associated distribution.
+
+## Latent Dirichlet Allocation models (II)
+
+Given $\alpha$ and $\beta$ parameters for the Dirichlet priors, LDA assumes therefore the following generative process:
+
+ - draw $\theta_m$ and $\phi_k$, respectively the topics and words distributions, from $\mbox{Dir}(\alpha)$ and $\mbox{Dir}(\beta)$
+ - the topics $z_{mn}$ are drawn from the categ. distributions $\theta_m$
+ - the words $w_{mn}$ are drawn from the categ. distributions $\phi_{z_{mn}}$
+
+LDA can be represented as a Probabilistic Graphical Model:
+
+<center>
+<img src="Smoothed_LDA.png" style="height: 150px"/>
+</center>
+
+## Data cleaning and lemmatization
+
+Often overlooked aspects; apart from the purely "programming-related" problems, some design decisions heavily affect the end results.
+
+In this case, the stopwords set (set of words to be discarded during reading) and the stemming algorithm (that removes suffixes from words) can introduce noise or (in some sense) bias, unless carefully chosen.
+
 ## Dataset Last Words of Death Row Inmates (I)
 
 This dataset includes information on criminals executed by Texas Department of Criminal Justice from 1982 to November 8th, 2017.
 
-545 observations with 21 variables: 
+545 observations with 21 variables:
 
  - Execution: The order of execution, numeric. 
  - LastName: Last name of the offender, character. 
@@ -52,7 +81,7 @@ This dataset includes information on criminals executed by Texas Department of C
  - LastStatement: Last statement of offender, character.
 
 ## Dataset Last Words of Death Row Inmates (II)
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 set.seed(1234)
 library(topicmodels,warn.conflicts = FALSE, quietly=TRUE)
 library(readr,warn.conflicts = FALSE, quietly=TRUE)
@@ -60,25 +89,32 @@ library(tm,warn.conflicts = FALSE, quietly=TRUE)
 #suppressMessages(library(tidyverse,warn.conflicts = FALSE, quietly=TRUE))
 library(dplyr,warn.conflicts = FALSE, quietly=TRUE)
 library(tidytext,warn.conflicts = FALSE, quietly=TRUE)
+library(tidyverse,warn.conflicts = FALSE, quietly=TRUE)
 library(slam,warn.conflicts = FALSE, quietly=TRUE)
 library(ggplot2,warn.conflicts = FALSE, quietly=TRUE)
 library(plotly,warn.conflicts = FALSE, quietly=TRUE)
 library(DT,warn.conflicts = FALSE, quietly=TRUE)
+library(LDAvis,warn.conflicts = FALSE, quietly=TRUE)
+library(modeltools,warn.conflicts = FALSE, quietly=TRUE)
+source('lda_tidiers.R')
+```
+
+```{r}
+doc_name = as.name('docs_statement')
 
 ## load documents
 # read document of last statement
-suppressMessages(data<-read_csv("Texas Last Statement - CSV.csv"))
-good_indexes <- data$LastStatement != "None"
+suppressMessages(data_tls<-read_csv("Texas Last Statement - CSV.csv"))
+stopwords_sieved <- readLines('stopwords.dat')
 
 # column TDCJNumber can be used as indentifier for each observation
 # column LastStatement has the text of the last statement
 
 # there are some problems with some characters, let's convert to ascii
-data$LastStatement <- iconv(data$LastStatement, from = "UTF-8", to = "ASCII//TRANSLIT")
+data_tls$LastStatement <- iconv(data_tls$LastStatement, from = "UTF-8", to = "ASCII//TRANSLIT")
 
-
-docs_statement <- data %>% filter(LastStatement != "None") %>% mutate(doc_id=as.character(TDCJNumber),text=LastStatement)
-docs<-docs_statement
+# remove entries with no statement, rename variables
+docs_statement <- data_tls %>% filter(LastStatement != "None") %>% rename(doc_id=TDCJNumber, text=LastStatement) %>% mutate(doc_id=as.character(doc_id))
 
 ## read documents of elections
 folders<-c("debates","primaries","speeches")
@@ -91,10 +127,10 @@ for(folder in folders){
     docs_election<-rbind(docs_election,data.frame(doc_id=fileName,text=text,folder=folder,who=tolower(substr(file,0,5)),stringsAsFactors = F))
   }
 }
-docs_election<-docs_election %>% mutate(folder=factor(folder),who=factor(who))
+docs_election <- docs_election %>% mutate(folder=factor(folder),who=factor(who))
 
 datatable(
-  docs_statement %>% select(-one_of("doc_id","text","LastStatement")), extensions = 'FixedColumns',
+  docs_statement %>% select(-one_of("doc_id","text")), extensions = 'FixedColumns',
   options = list(
   scrollX = T,
   scrollCollapse = T,paging=T,searching=T
@@ -105,7 +141,7 @@ datatable(
 
 ```{r}
 datatable(
-  docs_statement %>% select("LastStatement"), extensions = 'FixedColumns',
+  docs_statement %>% select("Last Statement" = "text"), extensions = 'FixedColumns',
   options = list(
   scrollX = T,
   scrollCollapse = T,paging=T,searching=T,pageLength=3
@@ -114,14 +150,13 @@ datatable(
 
 ## Most used words in last statements
 
-
 ```{r}
 library(wordcloud2)
 ### 
  # function to get document term matrix
  # documents: dataframe with columns doc_id and text
  # tfidf_threshold: (optional, default 0) minimum tf-idf value for each word to be kept in the dtm vocabulary
-getDtm <- function(documents, tfidf_threshold=0){
+getDtm <- function(documents, tfidf_threshold=0, stopwords_vector = stopwords('SMART')){
   ds  <- DataframeSource(data.frame(doc_id = documents$doc_id,
                                     text = documents$text,
                                     stringsAsFactors = FALSE))
@@ -129,12 +164,11 @@ getDtm <- function(documents, tfidf_threshold=0){
   # to lower, remove stopwords, remove numbers and punctuation, use stemming
   x   <- tm_map(x, content_transformer(tolower))
   # x   <- tm_map(x, removePunctuation)
-  x   <- tm_map(x, removeWords, c(stopwords("SMART")))
+  x   <- tm_map(x, removeWords, stopwords_vector)
   dtm <- DocumentTermMatrix(x, control = list(minWordLength = 3, removeNumbers = TRUE, removePunctuation = TRUE, stemming = TRUE))
 
   # reduce vocabulary of the dtm, consider only words with high values of tf-idf
   term_tfidf<-tapply(dtm$v/row_sums(dtm)[dtm$i], dtm$j, mean) *log2(nDocs(dtm)/col_sums(dtm > 0))
-  #print(paste("median tf-idf:",median(term_tfidf)))
 
   dtm_reduced <- dtm[, term_tfidf >= tfidf_threshold]
   rowTotals <- apply(dtm_reduced , 1, sum) #Find the sum of words in each Document
@@ -157,7 +191,8 @@ evaluate_doc_topics_distribution<-function(ap_lda, dtm){
   return(doc_topics_entropy)
 }
 
-dtm.new<- getDtm(docs,tfidf_threshold = 0)
+docs <- eval(doc_name)
+dtm.new<- getDtm(docs,tfidf_threshold = 0, stopwords_vector = stopwords_sieved)
 
 words<-data.frame(word=colnames(dtm.new),count=apply(dtm.new,2,sum),stringsAsFactors = F) %>% filter(count>4)
 #wordcloud2::wordcloud2(words)
@@ -170,47 +205,54 @@ words<-data.frame(word=colnames(dtm.new),count=apply(dtm.new,2,sum),stringsAsFac
 
 ```{r}
 ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
+ap_lda_LS <- ap_lda
 ap_topics <- tidy(ap_lda, matrix = "beta")
 
-
-ap_top_terms <- ap_topics %>%
-  group_by(topic) %>%
-  top_n(10, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta)
-
-ap_top_terms %>%
-  mutate(term = reorder(term, beta)) %>%
-  ggplot(aes(term, beta, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()+
-  labs(title="Top words of each topic")
+plot.ap_top_terms <- function(ap_topics) {
+  ap_top_terms <- ap_topics %>%
+    group_by(topic) %>%
+    top_n(10, beta) %>%
+    ungroup() %>%
+    arrange(topic, -beta)
+  
+  ap_top_terms %>%
+    mutate(term = reorder(term, beta)) %>%
+    ggplot(aes(term, beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ topic, scales = "free") +
+    coord_flip()+
+    labs(title="Top words for each topic")
+}
+plot.ap_top_terms(ap_topics)
 ```
 
 ## Top relevant Words for each topic
 
 
-$$relevance = \lambda*p(word|topic)+(1-\lambda)*\frac{p(word|topic)}{p(word)}$$
+$$relevance = \lambda*\log p(word|topic)+(1-\lambda)*\log\,\frac{p(word|topic)}{p(word)}$$
 
 ```{r}
 # Highlight words that are really relevant for each topic, so discard common words varying
 
-total<-sum(words$count)
-lambda<-0.9 # choose proper value of lambda
-ap_top_terms <- ap_topics %>% inner_join(words,by=c("term"="word"))%>% mutate(freq=count/total,relevance=lambda*beta+(1-lambda)*beta/freq) %>% 
-  group_by(topic) %>%
-  top_n(10, relevance) %>%
-  ungroup() %>%
-  arrange(topic, -relevance)
-
-ap_top_terms %>%
-  mutate(term = reorder(term, relevance)) %>%
-  ggplot(aes(term, relevance, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()+
-  labs(title="Top relevant words of each topic")
+lambda <- 0.6
+plot.ap_relevant_terms <- function(ap_topics) {
+  ap_rel_terms <- ap_topics %>%
+    # mutate(topic = paste0("topic", topic)) %>%
+    spread(topic, beta)
+  globalProb = rowSums(ap_rel_terms[-1]) / (ncol(ap_rel_terms)-1)
+  ap_rel_terms[-1] <- log(ap_rel_terms[-1]) + (lambda - 1) * log(globalProb)
+  
+  ap_rel_terms %>%
+    gather(topic, relevance, -term) %>% 
+    group_by(topic) %>% 
+    top_n(10, relevance) %>%
+    ggplot(aes(term, relevance, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ topic, scales = "free") +
+    coord_flip() +
+    labs(title="High-relevance words in topics")
+}
+plot.ap_relevant_terms(ap_topics)
 
 ```
 
@@ -275,7 +317,6 @@ p<-topic_by_groups(dataByGroup,t$data)+labs(x="Victims",color="topic")
 suppressWarnings(print(p))
 ```
 
-
 ## Dataset 2016 U.S. Presidential Campaign Texts and Polls
 
 It is a collection of transcripts that contains:
@@ -314,46 +355,17 @@ words<-data.frame(word=colnames(dtm.new),count=apply(dtm.new,2,sum),stringsAsFac
 ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
 ap_topics <- tidy(ap_lda, matrix = "beta")
 
-
-ap_top_terms <- ap_topics %>%
-  group_by(topic) %>%
-  top_n(10, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta)
-
-ap_top_terms %>%
-  mutate(term = reorder(term, beta)) %>%
-  ggplot(aes(term, beta, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()+
-  labs(title="Top words of each topic")
+plot.ap_top_terms(ap_topics)
 ```
 
 ## Top relevant Words for each topic
 
 
-$$relevance = \lambda*p(word|topic)+(1-\lambda)*\frac{p(word|topic)}{p(word)}$$
+$$relevance = \lambda*\log p(word|topic)+(1-\lambda)*\log\,\frac{p(word|topic)}{p(word)}$$
 
 ```{r}
 # Highlight words that are really relevant for each topic, so discard common words varying
-
-total<-sum(words$count)
-lambda<-0.9 # choose proper value of lambda
-ap_top_terms <- ap_topics %>% inner_join(words,by=c("term"="word"))%>% mutate(freq=count/total,relevance=lambda*beta+(1-lambda)*beta/freq) %>% 
-  group_by(topic) %>%
-  top_n(10, relevance) %>%
-  ungroup() %>%
-  arrange(topic, -relevance)
-
-ap_top_terms %>%
-  mutate(term = reorder(term, relevance)) %>%
-  ggplot(aes(term, relevance, fill = factor(topic))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ topic, scales = "free") +
-  coord_flip()+
-  labs(title="Top relevant words of each topic")
-
+plot.ap_relevant_terms(ap_topics)
 ```
 
 ## Distribution of topics
@@ -425,18 +437,47 @@ ggplot(df,aes(x=factor(topics),y=value,color=factor(fold)))+
   facet_wrap(~measure,scales = "free")
 ```
 
-## Compare VEM and Gibbs methods (I)
+## Correlated Topic Models (I)
 
-Estimate of LDA model can be made using VEM algorithm or Gibbs sampling.
+While LDA performs decently under opportune conditions, it fails to model the correlation between topics (or rather, it assumes a-priori uncorrelation between them).
 
-TODo add descr
+One way to approach this problem is to modify our model to replace the Dirichlet distribution on the topics with a logistic normal distribution with mean $\mu$ and correlation matrix $\Sigma$, obtaining the following PGM schema:
 
-## Compare VEM and Gibbs methods (II)
+<center>
+<img src="CTM_new.png" style="height: 170px"/>
+</center>
 
-```{r}
-ap_lda <- LDA(dtm.new, k = 5, control = list(seed = 1234,keep=1))
-#plot(ap_lda@logLiks)
-ap_lda <- LDA(dtm.new, k = 5, method = "Gibbs", control = list(burnin = 200, iter = 1000, keep = 1) )
-# check convergence of chain looking at loglikelihood vs iterations
-plot(ap_lda@logLiks)
+## Correlated Topic Models (II)
+
+The resulting model can be estimated by VEM, but no analogous to the Gibbs sampling method currently exists for CTM.
+
+```{r message=FALSE, warning=FALSE, include=FALSE, cache=TRUE}
+ap_ctm <- CTM(dtm.new, k = 5, control = list(seed=1234,keep=1))
+```
+
+```{r fig.height=4.5, fig.width=7, fig.align='center'}
+ap_ctm_topics <- tidy(ap_ctm, matrix = "beta")
+plot.ap_top_terms(ap_ctm_topics)
+```
+
+## Correlated Topic Models (III)
+
+Due to the significant increase in the number of parameters in the prior distribution, the convergence of the algorithm is much slower. This performance tradeoff is often unfeasible (often 10x slower than regular LDA) and/or numerically unstable.
+
+```{r fig.height=4, fig.width=6, fig.align='center'}
+plot.ap_relevant_terms(ap_ctm_topics)
+```
+
+
+## Principal Component Analysis
+Alternative ways to obtain from LDA a measure of affinity between different topics have been designed.
+
+One such method, useful for data visualization, is based on PCA. Given each topic's distribution, we can compute the Jensen-Shannon divergence between each pair, obtaining a $K\times K$ matrix; afterwards, we use classical multidimensional reduction on the obtained matrix to reduce the number of dimensions to 2 (typically).
+This way we associate to each topic a point in $\mathbb{R}^2$.
+
+```{r fig.height=2, fig.width=3, fig.align='center', cache=F}
+PCA <- LDAvis::jsPCA(posterior(ap_lda_LS)$terms)
+par(mar=c(0.5,0.5,0.4,0.1))
+symbols(PCA, circles = sqrt(colMeans(ap_lda_LS@gamma)/60) , inches = FALSE)
+text(PCA, col=2)
 ```
