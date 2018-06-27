@@ -4,3 +4,9 @@ font-size:15px;
 .dataTables_scrollBody{
 max-height:410px;
 }
+#dataset-last-words-of-death-row-inmates-i p{
+margin-bottom:0px;
+}
+#dataset-last-words-of-death-row-inmates-i li{
+font-size:12px;
+}

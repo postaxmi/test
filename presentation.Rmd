@@ -16,13 +16,24 @@ Topic models are a useful tool for the statistical analysis of texts.
 
 Illustrate the usage of topic models  via the package "topicmodels".
 
-A recommended route is to apply the methodology to a data set available on Kaggle, such as "2016 U.S. Presidential Campaign Texts and Polls" or  "Last Words of Death Row Inmates".
+Apply the methodology dataset "Last Words of Death Row Inmates" and "2016 U.S. Presidential Campaign Texts and Polls".
+
+## Topic models
+
+Topic modeling aims to discover and annotate large archives of documents with thematic information.
+
+There are different models, in the _topicmodels_ package there are:
+
+ - Latent Dirichlet Allocation
+    + Variational Expectation Maximization and Gibbs sampling
+ - Correlated Topic Models
+    + Variational Expectation Maximization
 
 ## Dataset Last Words of Death Row Inmates (I)
 
 This dataset includes information on criminals executed by Texas Department of Criminal Justice from 1982 to November 8th, 2017.
 
-The dataset consists of 545 observations with 21 variables. They are: 
+545 observations with 21 variables: 
 
  - Execution: The order of execution, numeric. 
  - LastName: Last name of the offender, character. 
@@ -263,11 +274,17 @@ suppressWarnings(print(p))
 p<-topic_by_groups(dataByGroup,t$data)+labs(x="Victims",color="topic")
 suppressWarnings(print(p))
 ```
-## Dataset election 2016
 
-descr
 
-## Election documents
+## Dataset 2016 U.S. Presidential Campaign Texts and Polls
+
+It is a collection of transcripts that contains:
+
+ - the presidential debates of Trump and Clinton
+ - Trump's speeches delivered after the RNC and Clinton's speeches delivered after the DNC
+ - speeches delivered by Trump, Clinton and Sanders during the primary campaigns
+
+## 2016 U.S. Presidential Campaign Texts
 
 ```{r}
 datatable(
@@ -358,13 +375,13 @@ dd %>% group_by(topic) %>% summarise(gamma=sum(gamma)) %>%
 # group data by folder and plot distribution
 dataByGroup<-dd %>% mutate(groupByValue=folder)
 t<-data_by_groups(dataByGroup)
-t$plot
+t$plot+labs(x="Type")
 ```
 
 ## Distribution of topics considering type of text (II)
 
 ```{r}
-topic_by_groups(dataByGroup,t$data)
+topic_by_groups(dataByGroup,t$data)+labs(x="Type",color="topic")
 ```
 
 
@@ -374,14 +391,14 @@ topic_by_groups(dataByGroup,t$data)
 # group data by who and plot distribution
 dataByGroup<-dd %>% mutate(groupByValue=who)
 t<-data_by_groups(dataByGroup)
-t$plot
+t$plot+labs(x="Who")
 ```
 
 ## Distribution of topics considering the author (II)
 
 
 ```{r}
-topic_by_groups(dataByGroup,t$data)
+topic_by_groups(dataByGroup,t$data)+labs(x="Who",color="topic")
 ```
 
 ## Number of topics
